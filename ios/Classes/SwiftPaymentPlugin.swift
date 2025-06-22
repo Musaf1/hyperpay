@@ -77,7 +77,13 @@ public class SwiftPaymentPlugin: NSObject,FlutterPlugin ,SFSafariViewControllerD
                  self.cvv = (args!["cvv"] as? String)!
                  self.setStorePaymentDetailsMode = (args!["EnabledTokenization"] as? String)!
                  self.openCustomUI(checkoutId: self.checkoutid, result1: result)
-            }
+            } else if self.type  == "StoredCards"{
+                
+                self.brands = (args!["brand"] as? String)!
+                self.tokenID = (args!["token_id"] as? String)!
+                self.cvv = (args!["cvv"] as? String)!
+                self.openStoredCardPayment(checkoutId: self.checkoutid, result1: result)
+           }
             else {
                 result(FlutterError(code: "1", message: "Method name is not found", details: ""))
                     }
@@ -244,6 +250,53 @@ public class SwiftPaymentPlugin: NSObject,FlutterPlugin ,SFSafariViewControllerD
                 }
             }
     }
+    
+    private func openStoredCardPayment(checkoutId: String, result1: @escaping FlutterResult) {
+
+        if self.mode == "live" {
+            self.provider = OPPPaymentProvider(mode: OPPProviderMode.live)
+        }else{
+            self.provider = OPPPaymentProvider(mode: OPPProviderMode.test)
+        }
+
+             if !OPPCardPaymentParams.isCvvValid(self.cvv) {
+                self.createalart(titletext: "CVV is Invalid", msgtext: "")
+            }
+            else {
+                do {
+                    let params = try OPPTokenPaymentParams(checkoutID: checkoutId, tokenID: self.tokenID, cardPaymentBrand: self.brands, cvv: self.cvv)
+                
+                    params.shopperResultURL =  self.shopperResultURL+"://result"
+                    self.transaction  = OPPTransaction(paymentParams: params)
+                    self.provider.submitTransaction(self.transaction!) {
+                        (transaction, error) in
+                        guard let transaction = self.transaction else {
+                            // Handle invalid transaction, check error
+                            self.createalart(titletext: error as! String, msgtext: error as! String)
+                            return
+                        }
+                        if transaction.type == .asynchronous {
+                            self.safariVC = SFSafariViewController(url: self.transaction!.redirectURL!)
+                            self.safariVC?.delegate = self;
+                            //    self.present(self.safariVC!, animated: true, completion: nil)
+                            UIApplication.shared.windows.first?.rootViewController?.present(self.safariVC!, animated: true, completion: nil)
+                        }
+                        else if transaction.type == .synchronous {
+                            NotificationCenter.default.addObserver(self, selector: #selector(self.didReceiveAsynchronousPaymentCallback), name: Notification.Name(rawValue: "AsyncPaymentCompletedNotificationKey"), object: nil)
+                        }
+                        else {
+                            // Handle the error
+                            self.createalart(titletext: error as! String, msgtext: "Plesae try again")
+                        }
+                    }
+                }
+                catch let error as NSError {
+                    // See error.code (OPPErrorCode) and error.localizedDescription to identify the reason of failure
+                    self.createalart(titletext: error.localizedDescription, msgtext: "")
+                }
+            }
+
+     }
 
        @objc func didReceiveAsynchronousPaymentCallback(result: @escaping FlutterResult) {
            NotificationCenter.default.removeObserver(self, name: Notification.Name(rawValue: "AsyncPaymentCompletedNotificationKey"), object: nil)
@@ -342,3 +395,4 @@ extension UIColor {
         self.init(red: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: CGFloat(a) / 255)
     }
 }
+
